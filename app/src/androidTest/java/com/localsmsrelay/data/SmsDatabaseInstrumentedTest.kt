@@ -1,11 +1,14 @@
 package com.localsmsrelay.data
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,6 +41,18 @@ class SmsDatabaseInstrumentedTest {
         assertEquals("短信501", messages.first().text)
         assertEquals("短信2", messages.last().text)
 
+        val newest = messages.first()
+        assertFalse(newest.isRead)
+        assertNull(newest.notificationId)
+        val notificationId = 2000
+        dao.attachNotificationId(newest.id, notificationId)
+        assertEquals(500, dao.countUnread())
+        assertEquals(1, dao.markRead(newest.id))
+        assertEquals(499, dao.countUnread())
+        assertEquals(notificationId, dao.getAllNewestFirst().first().notificationId)
+        assertEquals(499, dao.markAllRead())
+        assertEquals(0, dao.countUnread())
+
         dao.clearAll()
         assertTrue(dao.getAllNewestFirst().isEmpty())
         database.close()
@@ -66,11 +81,51 @@ class SmsDatabaseInstrumentedTest {
         }
     }
 
+    @Test
+    fun migrationFromVersion1PreservesHistoryAndAddsReadMetadata() {
+        context.deleteDatabase(databaseName)
+        val databaseFile = context.getDatabasePath(databaseName)
+        databaseFile.parentFile?.mkdirs()
+        SQLiteDatabase.openDatabase(
+            databaseFile.path,
+            null,
+            SQLiteDatabase.CREATE_IF_NECESSARY
+        ).also { legacy ->
+            legacy.execSQL(
+                """CREATE TABLE IF NOT EXISTS sms_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    sender TEXT,
+                    text TEXT NOT NULL,
+                    otp TEXT,
+                    receivedAt INTEGER NOT NULL,
+                    messageId TEXT
+                )""".trimIndent()
+            )
+            legacy.execSQL(
+                "INSERT INTO sms_messages(sender, text, otp, receivedAt, messageId) " +
+                    "VALUES('95555', '【测试银行】验证码583921', '583921', 1777000000000, 'legacy-1')"
+            )
+            legacy.version = 1
+            legacy.close()
+        }
+
+        openDatabase().also { migrated ->
+            val stored = migrated.smsMessageDao().getAllNewestFirst().single()
+            assertEquals("【测试银行】验证码583921", stored.text)
+            assertEquals("legacy-1", stored.messageId)
+            assertFalse(stored.isRead)
+            assertNull(stored.notificationId)
+            migrated.close()
+        }
+    }
+
     private fun openDatabase(): SmsDatabase = Room.databaseBuilder(
         context,
         SmsDatabase::class.java,
         databaseName
-    ).allowMainThreadQueries().build()
+    ).addMigrations(SmsDatabase.MIGRATION_1_2)
+        .allowMainThreadQueries()
+        .build()
 
     private fun entity(
         text: String,

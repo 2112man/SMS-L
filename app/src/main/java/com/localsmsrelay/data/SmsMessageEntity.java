@@ -1,6 +1,8 @@
 package com.localsmsrelay.data;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.room.ColumnInfo;
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
 
@@ -12,6 +14,7 @@ public class SmsMessageEntity {
     @Nullable
     public String sender;
 
+    @NonNull
     public String text = "";
 
     @Nullable
@@ -21,4 +24,10 @@ public class SmsMessageEntity {
 
     @Nullable
     public String messageId;
+
+    @ColumnInfo(defaultValue = "0")
+    public boolean isRead = false;
+
+    @Nullable
+    public Integer notificationId;
 }

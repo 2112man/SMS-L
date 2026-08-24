@@ -26,7 +26,7 @@ class RelayService : Service() {
         super.onCreate()
         isRunning = true
         NotificationHelper.createChannels(this)
-        val initial = NotificationHelper.serviceNotification(this, "正在启动…")
+        val initial = NotificationHelper.serviceNotification(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NotificationHelper.SERVICE_NOTIFICATION_ID,
@@ -116,17 +116,19 @@ class RelayService : Service() {
             try {
                 server = RelayHttpServer(BIND_ADDRESS, port, this, recentIds) { message ->
                     val otp = if (AppPrefs.otpEnabled(this)) OtpExtractor.extract(message.text) else null
-                    SmsHistoryRepository.get(this).saveIncoming(
+                    val saved = SmsHistoryRepository.get(this).saveIncoming(
                         message = message,
                         otp = otp,
                         receivedAt = System.currentTimeMillis()
                     )
                     NotificationHelper.showSms(
-                        this,
-                        message.sender,
-                        message.text,
-                        otp,
-                        AppPrefs.vibrate(this)
+                        context = this,
+                        messageDatabaseId = saved.databaseId,
+                        notificationId = saved.notificationId,
+                        unreadCount = saved.unreadCount,
+                        sender = message.sender,
+                        text = message.text,
+                        otp = otp
                     )
                 }.also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false) }
                 boundPort = port
@@ -154,9 +156,6 @@ class RelayService : Service() {
 
     private fun updateStatus(value: String) {
         statusText = value
-        val notification = NotificationHelper.serviceNotification(this, value)
-        getSystemService(android.app.NotificationManager::class.java)
-            .notify(NotificationHelper.SERVICE_NOTIFICATION_ID, notification)
         broadcastStatus()
     }
 

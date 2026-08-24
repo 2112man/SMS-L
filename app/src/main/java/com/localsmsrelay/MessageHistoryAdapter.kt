@@ -15,7 +15,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.localsmsrelay.data.SmsMessageEntity
 
 class MessageHistoryAdapter(
-    private val onCopyOtp: (String) -> Unit
+    private val onCopyOtp: (String) -> Unit,
+    private val onMessageClicked: (SmsMessageEntity) -> Unit
 ) : RecyclerView.Adapter<MessageHistoryAdapter.MessageViewHolder>() {
     private var messages: List<SmsMessageEntity> = emptyList()
     private val expandedIds = mutableSetOf<Long>()
@@ -33,7 +34,8 @@ class MessageHistoryAdapter(
                 val new = newMessages[newItemPosition]
                 return old.id == new.id && old.sender == new.sender && old.text == new.text &&
                     old.otp == new.otp && old.receivedAt == new.receivedAt &&
-                    old.messageId == new.messageId
+                    old.messageId == new.messageId && old.isRead == new.isRead &&
+                    old.notificationId == new.notificationId
             }
         })
         messages = newMessages
@@ -135,6 +137,7 @@ class MessageHistoryAdapter(
             if (!otpValue.isNullOrBlank()) onCopyOtp(otpValue)
         }
         holder.itemView.setOnClickListener {
+            if (!message.isRead) onMessageClicked(message)
             if (message.id in expandedIds) expandedIds.remove(message.id) else expandedIds.add(message.id)
             val adapterPosition = holder.bindingAdapterPosition
             if (adapterPosition != RecyclerView.NO_POSITION) notifyItemChanged(adapterPosition)

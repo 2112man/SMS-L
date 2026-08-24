@@ -38,6 +38,7 @@ import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.localsmsrelay.data.SmsHistoryRepository
+import com.localsmsrelay.data.SmsMessageEntity
 import java.util.Locale
 
 class MainActivity : Activity() {
@@ -73,13 +74,23 @@ class MainActivity : Activity() {
         NotificationHelper.createChannels(this)
         AppPrefs.token(this)
         historyRepository = SmsHistoryRepository.get(this)
-        historyAdapter = MessageHistoryAdapter(::copyOtp)
+        historyAdapter = MessageHistoryAdapter(::copyOtp, ::onMessageClicked)
         setContentView(buildUi())
 
         selectedPage = AppNavigation.defaultPage
-        showPage(selectedPage)
+        showPage(selectedPage, markMessagesRead = false)
+        handleEntryIntent(intent, directEntry = true)
 
         if (intent.getBooleanExtra(EXTRA_RESTORE_SERVICE, false) && !RelayService.isRunning) {
+            ensureNotificationPermission { startRelayService() }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleEntryIntent(intent, directEntry = intent?.action == Intent.ACTION_MAIN)
+        if (intent?.getBooleanExtra(EXTRA_RESTORE_SERVICE, false) == true && !RelayService.isRunning) {
             ensureNotificationPermission { startRelayService() }
         }
     }
@@ -323,9 +334,15 @@ class MainActivity : Activity() {
             ensureNotificationPermission {
                 val sample = "【SMS-L】测试验证码 123456"
                 val otp = if (AppPrefs.otpEnabled(this)) OtpExtractor.extract(sample) else null
-                NotificationHelper.showSms(this, null, sample, otp, AppPrefs.vibrate(this))
+                NotificationHelper.showTestSms(this, sample, otp)
             }
         }, marginTop(8))
+
+        root.addView(sectionTitle("通知设置"))
+        root.addView(text("系统中有两个通知分类：后台监听（低打扰）和短信提醒（正常提醒）。可分别调整声音、震动和弹出方式。", 14f).apply {
+            setLineSpacing(0f, 1.2f)
+        })
+        root.addView(button("打开通知设置") { openNotificationSettings() }, marginTop(10))
 
         root.addView(sectionTitle("选项"))
         root.addView(switch("开机自动启动", AppPrefs.autoStart(this)) {
@@ -336,6 +353,7 @@ class MainActivity : Activity() {
         })
         root.addView(switch("收到短信时震动", AppPrefs.vibrate(this)) {
             AppPrefs.setVibrate(this, it)
+            NotificationHelper.updateIncomingSmsVibration(this)
         })
 
         root.addView(sectionTitle("后台运行说明"))
@@ -347,13 +365,18 @@ class MainActivity : Activity() {
         return scroll
     }
 
-    private fun showPage(page: AppNavigation.Page) {
+    private fun showPage(page: AppNavigation.Page, markMessagesRead: Boolean = true) {
         selectedPage = page
         messagesPage.visibility = if (page == AppNavigation.Page.MESSAGES) View.VISIBLE else View.GONE
         settingsPage.visibility = if (page == AppNavigation.Page.SETTINGS) View.VISIBLE else View.GONE
         styleNavButton(messagesNavButton, page == AppNavigation.Page.MESSAGES)
         styleNavButton(settingsNavButton, page == AppNavigation.Page.SETTINGS)
-        if (page == AppNavigation.Page.MESSAGES) refreshHistory() else refreshStatus()
+        if (page == AppNavigation.Page.MESSAGES) {
+            refreshHistory()
+            if (markMessagesRead) markAllMessagesReadAndCancelNotifications()
+        } else {
+            refreshStatus()
+        }
     }
 
     private fun styleNavButton(button: Button, selected: Boolean) {
@@ -378,7 +401,12 @@ class MainActivity : Activity() {
             .setMessage("确定清空全部短信记录？")
             .setNegativeButton("取消", null)
             .setPositiveButton("清空") { _, _ ->
-                historyRepository.clearAll { toast("短信记录已清空") }
+                NotificationHelper.cancelAllIncomingSms(this)
+                historyRepository.clearAll { notificationIds ->
+                    notificationIds.forEach { NotificationHelper.cancelIncomingSms(this, it) }
+                    NotificationHelper.cancelAllIncomingSms(this)
+                    toast("短信记录已清空")
+                }
             }
             .show()
     }
@@ -387,6 +415,42 @@ class MainActivity : Activity() {
         getSystemService(ClipboardManager::class.java)
             .setPrimaryClip(ClipData.newPlainText("验证码", otp))
         toast("验证码已复制")
+    }
+
+    private fun handleEntryIntent(intent: Intent?, directEntry: Boolean) {
+        val messageId = intent?.getLongExtra(EXTRA_MESSAGE_ID, -1L) ?: -1L
+        val notificationId = intent?.getIntExtra(EXTRA_NOTIFICATION_ID, -1) ?: -1
+        val isIncomingSmsTap = messageId > 0L && notificationId > 0 &&
+            notificationId != NotificationHelper.SERVICE_NOTIFICATION_ID
+
+        when {
+            isIncomingSmsTap -> {
+                showPage(AppNavigation.Page.MESSAGES, markMessagesRead = false)
+                markMessageReadAndCancel(messageId, notificationId)
+            }
+            directEntry || intent?.getBooleanExtra(EXTRA_OPEN_MESSAGES, false) == true -> {
+                showPage(AppNavigation.Page.MESSAGES, markMessagesRead = true)
+            }
+        }
+    }
+
+    private fun onMessageClicked(message: SmsMessageEntity) {
+        val notificationId = message.notificationId ?: NotificationIds.incomingSms(message.id)
+        markMessageReadAndCancel(message.id, notificationId)
+    }
+
+    private fun markMessageReadAndCancel(messageId: Long, notificationId: Int) {
+        NotificationHelper.cancelIncomingSms(this, notificationId)
+        historyRepository.markRead(messageId) { refreshHistory() }
+    }
+
+    private fun markAllMessagesReadAndCancelNotifications() {
+        NotificationHelper.cancelAllIncomingSms(this)
+        historyRepository.markAllRead { notificationIds ->
+            notificationIds.forEach { NotificationHelper.cancelIncomingSms(this, it) }
+            NotificationHelper.cancelAllIncomingSms(this)
+            refreshHistory()
+        }
     }
 
     private fun refreshHistory() {
@@ -535,6 +599,19 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.parse("package:$packageName"))
+            )
+        }
+    }
+
     private fun sectionTitle(value: String) = text(value, 19f, Typeface.BOLD).apply {
         setTextColor(Color.rgb(14, 77, 100))
         setPadding(0, dp(26), 0, dp(10))
@@ -600,6 +677,9 @@ class MainActivity : Activity() {
 
     companion object {
         const val EXTRA_RESTORE_SERVICE = "restore_service"
+        const val EXTRA_OPEN_MESSAGES = "open_messages"
+        const val EXTRA_MESSAGE_ID = "message_database_id"
+        const val EXTRA_NOTIFICATION_ID = "notification_id"
         private const val REQUEST_NOTIFICATIONS = 50
     }
 }

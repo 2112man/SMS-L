@@ -10,8 +10,8 @@ android {
         applicationId = "com.localsmsrelay"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.1.3"
+        versionCode = 9
+        versionName = "1.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
