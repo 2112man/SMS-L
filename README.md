@@ -1,24 +1,29 @@
 # SMS-L
 
-SMS-L 是一个轻量、纯本地的 Android 短信中继工具。它通过 iPhone“快捷指令自动化”接收转发的短信 JSON，在 Android 手机上显示系统通知、识别验证码，并保存最近的接收记录。
+SMS-L 是一个 Android 短信中继工具。它通过 iPhone「快捷指令自动化」接收转发的短信 JSON，在 Android 手机上显示系统通知、识别验证码，并保存最近的接收记录。
 
-整个过程只发生在局域网内，不依赖账号、云服务器、Firebase、Root 或互联网。
+支持两种接收方式：
 
-> 适用场景：主力手机使用 Android，但短信仍由 iPhone SIM 卡接收，希望在同一 Wi-Fi 下把短信和验证码即时转发到 Android。
+| 模式 | 链路 | iPhone 与 Android 需要在同一 Wi-Fi | 默认 |
+| --- | --- | --- | --- |
+| **Cloudflare 云端中继** | iPhone → HTTPS → Cloudflare Worker → Durable Object → WebSocket → Android | 否 | ✅ |
+| 局域网直连（兼容保留） | iPhone → HTTP → Android 内嵌 HTTP 服务 | 是 | |
+
+> 适用场景：主力手机使用 Android，但短信仍由 iPhone SIM 卡接收，希望把短信和验证码即时转发到 Android。
 
 ## 功能亮点
 
-- **局域网直连**：iPhone 通过 `POST /sms` 直接向 Android 发送短信，不经过第三方服务器。
-- **中文完整支持**：HTTP 请求体和 JSON 全程严格使用 UTF-8，避免中文短信乱码。
+- **云端中继**：Android 主动连接 Cloudflare WebSocket，不需要公网 IP、不需要开放端口、不需要 VPS、不依赖第三方推送服务。
+- **局域网直连**：保留原有实现，Cloudflare 不可用时可在设置中一键切回。
+- **中文完整支持**：请求体与 JSON 全程严格使用 UTF-8，非法字节直接拒绝而不是替换成 `?`。
 - **验证码识别**：从验证码、校验码、动态码、OTP、verification code 等关键词附近识别 4–8 位数字。
 - **一键复制 OTP**：通知和消息历史均提供验证码复制操作。
 - **本地消息历史**：使用 Room Database 保存最近 500 条记录，App 被关闭或手机重启后仍然保留。
-- **请求去重**：相同 `messageId` 在短时间内不会重复通知或重复写入历史。
-- **Token 验证**：每个请求必须携带本机生成的随机 Token。
-- **后台监听**：Android 前台服务持续接收请求，可选择开机自动启动。
+- **不丢不重**：服务端短期队列 + WebSocket 重连补发保证不丢；Room 唯一索引幂等去重保证不重。
+- **连接状态可见**：设置页实时显示已连接 / 连接中 / 重连中 / 认证失败及失败原因。
+- **后台监听**：Android 前台服务持续维持连接，支持开机自动启动。
 - **通知完全分离**：低打扰的前台服务通知与高优先级短信提醒使用独立 Channel 和 notificationId。
-- **已读与角标同步**：点击短信通知、打开消息页或点击未读记录时，会明确取消对应短信提醒；后台监听通知永不参与桌面角标。
-- **VPN/TUN 兼容**：FlClash、VPN 或 TUN 开启时，页面仍显示真实物理 Wi-Fi IPv4。
+- **已读与角标同步**：点击短信通知、打开消息页或点击未读记录时，会明确取消对应短信提醒。
 - **极简界面**：消息与设置两个一级页面，无账号体系、广告或复杂菜单。
 
 ## 工作流程
@@ -26,143 +31,166 @@ SMS-L 是一个轻量、纯本地的 Android 短信中继工具。它通过 iPho
 ```mermaid
 flowchart LR
     A[iPhone 收到短信] --> B[快捷指令自动化]
-    B -->|UTF-8 JSON / HTTP POST| C[SMS-L]
-    C --> D{Token 验证}
-    D -->|通过| E[OTP 识别与 messageId 去重]
-    D -->|失败| F[拒绝请求]
-    E --> G[保存 Room 历史]
-    G --> H[显示 Android 通知]
+    B -->|HTTPS POST + Bearer IPHONE_TOKEN| C[Cloudflare Worker]
+    C --> D{Token 校验}
+    D -->|失败| E[401 拒绝]
+    D -->|通过| F[Durable Object 入队]
+    F -->|WebSocket| G[Android SMS-L]
+    G --> H[OTP 识别与 messageId 去重]
+    H --> I[保存 Room 历史]
+    I --> J[显示系统通知]
+    I -->|ack| F
+```
+
+局域网模式下，Cloudflare 部分被替换为 Android 内嵌的 NanoHTTPD 服务，其余环节完全一致。
+
+## 项目结构
+
+```
+SMS-L/
+├── app/                        Android 客户端
+│   └── src/main/java/com/localsmsrelay/
+│       ├── CloudflareClient.kt     WebSocket 客户端（重连 / 心跳 / ack）
+│       ├── RelayEnvelope.kt        云端协议解析与内容哈希兜底
+│       ├── RelayEndpoint.kt        服务器地址规范化
+│       ├── ConnectionState.kt      连接状态模型
+│       ├── RelayService.kt         前台服务，承载两条互斥链路
+│       ├── RelayHttpServer.kt      局域网模式：NanoHTTPD 服务
+│       ├── IncomingMessage.kt      短信模型（两条链路共用）
+│       ├── AppPrefs.kt             配置读写
+│       ├── OtpExtractor.kt         验证码识别
+│       ├── NotificationHelper.kt   通知
+│       └── data/                   Room 数据库与仓库层
+├── server/
+│   └── cloudflare/             Cloudflare Worker + Durable Object
+│       ├── src/index.js            Worker 路由、Token 校验、内容哈希兜底
+│       ├── src/hub.js              Durable Object：连接管理与待确认队列
+│       ├── wrangler.toml           部署配置
+│       └── README.md               部署与故障排查
+└── README.md
 ```
 
 ## 系统要求
 
 - Android 8.0 及以上（`minSdk 26`）
-- iPhone 与 Android 位于可以互相访问的同一 Wi-Fi/LAN
-- iPhone“快捷指令”具有本地网络访问权限
-- Android 允许 SMS-L 显示通知
+- 云端模式：一个 Cloudflare 账号（免费计划即可）
+- 局域网模式：iPhone 与 Android 位于可互访的同一 Wi-Fi，且 iPhone「快捷指令」具有本地网络权限
 
 项目当前配置：
 
 | 项目 | 版本 |
 | --- | --- |
-| App | 1.3.0 |
+| App | 1.4.0 |
 | minSdk | 26 |
 | targetSdk / compileSdk | 36 |
 | Room | 2.8.4 |
-| NanoHTTPD | 2.3.1 |
+| OkHttp | 4.12.0 |
+| NanoHTTPD | 2.3.1（局域网模式） |
 
-## 安装
+## 快速开始（云端模式）
 
-### 下载 APK
+### 1. 部署 Cloudflare 侧
 
-从仓库的 [Releases](../../releases) 页面下载最新 Debug APK，然后在 Android 手机上安装。
+完整步骤见 [`server/cloudflare/README.md`](server/cloudflare/README.md)。要点：
 
-### 从源码构建
-
-使用 Android Studio 打开项目，或在项目根目录执行：
-
-```powershell
-.\gradlew.bat testDebugUnitTest assembleDebug
+```bash
+cd server/cloudflare
+npm install
+npx wrangler login
+npx wrangler secret put IPHONE_TOKEN    # 给 iPhone 用
+npx wrangler secret put ANDROID_TOKEN   # 给 Android 用，必须与上面不同
+npx wrangler deploy
 ```
 
-生成文件：
+部署后会得到形如 `https://sms-l-relay.<子域>.workers.dev` 的地址。
 
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
+### 2. 配置 Android
 
-ADB 安装：
+1. 安装 APK 并打开 SMS-L。
+2. 进入「设置」，确认「使用 Cloudflare 云端中继」已开启。
+3. **服务器地址**填上一步得到的地址，`wss://` 和 `/ws` 会自动补全。
+4. **Android Token** 复制下来，执行 `npx wrangler secret put ANDROID_TOKEN` 写入同一份值。
+5. 点「保存配置」，再点「启动服务」。
+6. 状态应变为 **已连接云端**。若显示认证失败，说明两边 Token 不一致。
 
-```powershell
-adb install -r .\app\build\outputs\apk\debug\app-debug.apk
-```
+### 3. 配置 iPhone 快捷指令
 
-## Android 初次配置
+1. 打开「快捷指令」→「自动化」→ 新建「收到信息」个人自动化。
+2. 选择「立即运行」或关闭运行前询问。
+3. 添加「获取 URL 内容」。
+4. URL 填 `https://sms-l-relay.<子域>.workers.dev/sms`。
+5. 展开后设置：方法 `POST`，请求正文 `JSON`。
+6. 添加请求头：
 
-1. 打开 **SMS-L**，默认进入“消息”页面。
-2. 点击“启动”并允许通知权限。
-3. 进入“设置”页面，复制自动生成的 Token。
-4. 保持默认端口 `8765`，或设置 `1024–65535` 范围内的端口。
-5. 记录页面显示的“iPhone 请求地址”，例如：
+   ```text
+   Content-Type: application/json
+   Authorization: Bearer <IPHONE_TOKEN>
+   ```
 
-```text
-http://192.168.1.88:8765/sms
-```
+7. JSON 正文：
 
-Samsung One UI 建议设置：
-
-```text
-设置 → 应用 → SMS-L → 电池 → 不受限制
-```
-
-设置页提供“打开电池设置”入口。如果系统限制后台启动，SMS-L 会尽可能显示恢复服务提醒。
-
-设置页还提供“打开通知设置”入口。系统中会显示两个主要通知分类：
-
-- `后台监听`：低优先级、无声音、无震动、无角标，仅用于前台服务常驻要求。
-- `短信提醒`：高优先级，用于每一条 iPhone 短信的独立提醒、OTP 和复制操作。
-
-前台服务通知内容固定，不会在收到短信、刷新 IP 或普通状态变化后重新置顶。
-短信通知与 Room 记录关联保存。点击单条短信通知只清除该条未读状态；直接打开 App 会将当前未读消息设为已读并取消短信提醒，但不会移除后台监听通知。
-
-## 配置 iPhone 快捷指令
-
-1. 打开“快捷指令” → “自动化”。
-2. 新建“收到信息”个人自动化。
-3. 选择“立即运行”或关闭运行前询问。
-4. 添加“获取 URL 内容”。
-5. URL 填写 SMS-L 设置页显示的 iPhone 请求地址。
-6. 方法选择 `POST`。
-7. 请求正文选择 `JSON`。
-8. 至少添加 `text` 和 `token`。
-
-Header：
-
-```text
-Content-Type: application/json
-```
-
-JSON 字段：
+   ```json
+   {
+     "messageId": "唯一ID（可选）",
+     "sender": "95588",
+     "text": "您的验证码是123456",
+     "timestamp": 1726680000
+   }
+   ```
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `text` | 是 | 短信完整正文 |
-| `token` | 是 | SMS-L 设置页显示的 Token |
 | `sender` | 否 | 发件人号码或名称 |
-| `timestamp` | 否 | iPhone 提供的时间；不用于 Android 接收时间 |
-| `messageId` | 否 | 短信唯一标识，用于请求去重 |
+| `timestamp` | 否 | UNIX 秒 |
+| `messageId` | 否 | 短信唯一标识；缺失时服务端用内容哈希兜底 |
 
-请求示例：
+## 验收测试
 
-```json
-{
-  "sender": "95555",
-  "text": "【招商银行】您的验证码为583921，5分钟内有效",
-  "messageId": "message-abc123",
-  "token": "粘贴 SMS-L 中显示的 Token"
-}
+部署完成后，先用 curl 打通链路，再验证 Android 通知：
+
+```bash
+curl -i -X POST https://sms-l-relay.<子域>.workers.dev/sms \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <IPHONE_TOKEN>" \
+  -d '{"messageId":"test-001","sender":"95588","text":"您的验证码是123456","timestamp":1726680000}'
 ```
 
-`messageId` 必须能够唯一标识一条短信。无法产生唯一值时应省略该字段，不要填写固定值。
+期望返回 `202` 与 `{"ok":true,"messageId":"test-001","delivered":1}`，同时 Android 弹出验证码通知。
 
-## HTTP API
+其他场景：
 
-### `POST /sms`
+| 测试 | 命令要点 | 期望 |
+| --- | --- | --- |
+| 鉴权 | 去掉 `Authorization` 头 | `401` |
+| Token 隔离 | 用 `ANDROID_TOKEN` 调 `/sms` | `401` |
+| 去重 | 同一条命令重复发送 | 返回 `202`，但只弹一次通知 |
+| 断网补发 | 关闭 Android 网络 → 发送 → 恢复网络 | 重连后补发通知 |
+| 超大正文 | `text` 超过 8000 字符 | `400` |
 
-接收短信 JSON。兼容：
+## 局域网模式（兼容保留）
 
-```text
-application/json
-application/json; charset=utf-8
-```
+在设置中关闭「使用 Cloudflare 云端中继」即切回原有实现，配置项与旧版一致：
 
-成功响应：
+1. 打开「设置」，复制自动生成的 Token。
+2. 保持默认端口 `8765`，或设置 `1024–65535` 范围内的端口。
+3. 记录页面显示的「iPhone 请求地址」，例如 `http://192.168.1.88:8765/sms`。
+4. 快捷指令的 URL 填该地址，JSON 正文额外包含 `token` 字段：
 
-```json
-{"ok":true}
-```
+   ```json
+   {
+     "sender": "95555",
+     "text": "【招商银行】您的验证码为583921，5分钟内有效",
+     "messageId": "message-abc123",
+     "token": "粘贴 SMS-L 中显示的 Token"
+   }
+   ```
 
-常见状态码：
+局域网模式的接口（`POST /sms`、`GET /health`）、状态码、去重与大小限制与旧版完全一致。
+
+> 局域网模式是明文 HTTP，仅靠 Token 鉴权。请勿在公共或不可信 Wi-Fi 中使用。
+
+## HTTP API（局域网模式）
 
 | 状态码 | 含义 |
 | --- | --- |
@@ -173,73 +201,105 @@ application/json; charset=utf-8
 
 限制：请求体最大 16 KiB，`text` 最大 8,000 字符。
 
-### `GET /health`
+## 可靠性与去重
 
-服务健康检查：
+两层机制配合，才能同时做到「不丢」和「不重」：
 
-```json
-{"ok":true,"service":"SMS-L"}
+1. **不丢**：Worker 把消息写入 Durable Object 的待确认队列（上限 50 条、保留 24 小时）。Android 断线期间到达的消息留在队列里，重连后立即重放。
+2. **不重**：Android 每成功写库就回发 `ack`，DO 收到即出队；即使 ack 丢失，重放的消息也会被 Room 上 `messageId` 的唯一索引拦下。
+
+**messageId 兜底**：快捷指令若给不出唯一值，服务端用 `SHA-256(sender + NUL + text + NUL + timestamp秒)` 生成确定性 ID（前缀 `h1-`）。Android 端实现了完全相同的算法，并由单元测试锁定跨语言一致性。
+
+> 权衡：兜底哈希下，「同一秒、同一发件人、完全相同正文」的两条短信会被判为重复。这是为了在快捷指令无法提供唯一 ID 时仍能去重而接受的代价。
+
+## 后台运行
+
+- WebSocket 长连接运行在 `RelayService` 前台服务中，通知类型固定为 `connectedDevice`（保留原有类型，不使用有 6 小时上限的 `dataSync`）。
+- 网络切换时通过 `ConnectivityManager` 回调立即重连，不等退避计时。
+- 断线后按指数退避重连（1s → 60s 上限，带 ±20% 抖动）。
+- 开启「开机自动启动」后，`BootReceiver` 会在开机和 App 更新后恢复服务。
+
+建议设置：
+
+```text
+设置 → 应用 → SMS-L → 电池 → 不受限制
 ```
 
-## 消息历史
+设置页提供「打开电池设置」入口。Samsung One UI 等系统的省电策略仍可能中断后台服务，此时 SMS-L 会提示恢复。
 
-每个通过 Token 验证且未被判定为重复的请求会保存：
-
-- 发件人
-- 短信正文
-- 识别到的 OTP
-- Android 手机实际接收时间
-- `messageId`
-
-消息按最新时间倒序显示，最多保留 500 条。超过上限后自动删除最旧记录。可在消息页面右上角菜单中清空全部历史。
-
-数据库仅保存在 App 私有目录，不会写入 Samsung Messages。
-
-## 网络与 VPN
-
-- HTTP Server 底层使用通配地址监听，保证 VPN/TUN 切换时服务无需绑定虚拟 IP。
-- 用户界面只显示通过 `ConnectivityManager` 获取的真实物理 Wi-Fi IPv4。
-- 自动排除 VPN、TUN、蜂窝网络、loopback、link-local 和 IPv6 地址。
-- Wi-Fi IP 变化后，设置页会自动刷新 iPhone 请求地址。
-
-建议在路由器中为 Android 手机设置 DHCP 静态租约，避免 IP 经常变化。
+> 由于不使用任何推送服务，如果 Android 进程被系统彻底杀死，消息只能在服务恢复后补发，**此时的延迟是不确定的**。这是放弃推送服务的必然代价。
 
 ## 隐私与安全
 
-- 不上传短信或历史记录。
-- 不需要注册账号。
-- 不读取 Android 本机短信数据库。
-- Token 使用安全随机数生成并保存在本机 `SharedPreferences`。
+- 云端模式全程 HTTPS/WSS，Token 只通过 `Authorization` 请求头传递，不出现在 URL、日志或错误信息中。
+- 两个 Token 完全独立：`IPHONE_TOKEN` 只存于 Worker Secrets，`ANDROID_TOKEN` 只存于 Worker Secrets 与手机本地。
+- Worker 与 Durable Object **不输出任何包含短信正文、发件人或 Token 的日志**。
+- Android 不暴露公网端口，连接由手机主动发起，因此不泄露手机真实 IP。
+- 不上传短信或历史记录到任何第三方；Cloudflare 只做转发与短期排队。
+- 不需要注册账号，不读取 Android 本机短信数据库。
 - Debug 日志只记录解析后的短信正文，不记录 Token。
-- HTTP 为局域网明文传输，请勿在公共或不可信 Wi-Fi 中使用，也不要公开请求地址和 Token。
 
 ## Android 权限
 
 | 权限 | 用途 |
 | --- | --- |
-| `INTERNET` | 在本机打开 HTTP 监听端口 |
-| `ACCESS_NETWORK_STATE` / `ACCESS_WIFI_STATE` | 识别物理 Wi-Fi IPv4 |
+| `INTERNET` | 建立 WSS 长连接；局域网模式下的本机监听 |
+| `ACCESS_NETWORK_STATE` / `ACCESS_WIFI_STATE` | 网络变化感知；局域网模式下识别物理 Wi-Fi IPv4 |
 | `CHANGE_NETWORK_STATE` | 满足 connectedDevice 前台服务运行条件，不主动修改网络 |
-| `FOREGROUND_SERVICE` | 持续运行局域网监听服务 |
+| `FOREGROUND_SERVICE` | 持续运行中继服务 |
 | `POST_NOTIFICATIONS` | 显示短信和服务通知 |
 | `RECEIVE_BOOT_COMPLETED` | 开机后按用户设置恢复服务 |
 
+清单中保留了 `usesCleartextTraffic="true"`，因为兼容保留的局域网模式使用明文 HTTP。云端模式本身不需要它；若要彻底禁用明文，需同时移除局域网模式。
+
+## 构建与测试
+
+```powershell
+.\gradlew.bat testDebugUnitTest assembleDebug
+```
+
+```powershell
+adb install -r .\app\build\outputs\apk\debug\app-debug.apk
+```
+
+Cloudflare 侧：
+
+```bash
+cd server/cloudflare
+npm run check    # JS 语法检查
+npx wrangler dev # 本地开发
+```
+
 ## 已知限制
 
-- iPhone 与 Android 必须处于可互访的同一局域网，访客网络的客户端隔离会阻止请求。
-- Samsung One UI、省电模式或系统“强行停止”可能中断后台服务。
+- 云端模式依赖 Cloudflare 服务可用性；不可用时可在设置中切回局域网模式。
+- 长时间离线后重连，最多补发最近 50 条、24 小时内的消息。
+- Samsung One UI、省电模式或系统「强行停止」可能中断后台服务。
 - SMS-L 只负责转发、通知和本地历史，不支持回复短信。
-- `messageId` 去重记录保存在内存中，App 进程重启后会重新开始记录。
+- 局域网模式要求 iPhone 与 Android 处于可互访的同一局域网，访客网络的客户端隔离会阻止请求。
 - iOS 快捷指令可用的短信变量和自动运行行为可能随系统版本、地区或设备策略变化。
+
+## 故障排查
+
+| 现象 | 排查方向 |
+| --- | --- |
+| WebSocket 连不上 | 检查服务器地址是否可访问；确认填的是 Worker 地址而非 `/sms` 接口地址 |
+| 状态显示认证失败 | Android Token 与 Worker 的 `ANDROID_TOKEN` secret 不一致 |
+| 后台频繁断开 | 关闭该 App 的电池优化；确认未被系统「强行停止」 |
+| Cloudflare 返回 401 | `Authorization` 头必须是 `Bearer <token>`，注意首尾空格 |
+| 消息重复 | 确认 Android 能回发 ack；正常情况下 Room 唯一索引也会拦下 |
+| 消息丢失 | 超过 50 条或 24 小时的离线消息不会补发；检查 App 是否在运行 |
+| 重启后不自动连接 | 设置中开启「开机自动启动」，并关闭电池优化 |
 
 ## 验证状态
 
 - UTF-8 中文短信测试
 - OTP 识别测试
 - 物理 Wi-Fi / VPN 排除测试
-- 默认消息页与空状态测试
 - 消息时间格式与 `messageId` 去重测试
-- Room 数据库持久化、500 条上限、v1 → v2 迁移、已读与通知取消真机测试
+- Room 数据库持久化、500 条上限、v1 → v2 → v3 迁移、唯一索引去重
+- Cloudflare Worker 与 Durable Object 逻辑测试（68 项）
+- 跨语言内容哈希一致性测试（Node 与 Kotlin 两端对照）
 - `lintDebug` 与 `assembleDebug` 构建检查
 
 每个 Release 页面会同时提供 APK 和对应的 SHA-256 校验文件。

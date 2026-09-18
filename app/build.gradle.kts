@@ -10,8 +10,8 @@ android {
         applicationId = "com.localsmsrelay"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.3.0"
+        versionCode = 10
+        versionName = "1.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -33,6 +33,8 @@ android {
 
 dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    // WebSocket 客户端：Android 没有内置的 WebSocket 实现，java.net.http 在 Android 上不可用。
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.room:room-runtime:2.8.4")
     annotationProcessor("androidx.room:room-compiler:2.8.4")
     implementation("androidx.recyclerview:recyclerview:1.4.0")

@@ -1,0 +1,16 @@
+{
+  "name": "sms-l-cloudflare-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SMS-L 云端中继：Cloudflare Worker + Durable Object，负责 iPhone POST 到 Android WebSocket 的转发",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail --format pretty",
+    "check": "node --check src/index.js && node --check src/hub.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

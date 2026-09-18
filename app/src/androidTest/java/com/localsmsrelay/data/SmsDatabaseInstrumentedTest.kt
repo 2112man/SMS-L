@@ -119,11 +119,76 @@ class SmsDatabaseInstrumentedTest {
         }
     }
 
+    /**
+     * v2 时代的去重是纯内存的（RecentMessageIds），进程重启即失效，
+     * 因此历史数据里可能真的存在重复 messageId。迁移必须先删重复再建唯一索引，
+     * 否则 CREATE UNIQUE INDEX 会直接失败、整个升级流程炸掉。
+     */
+    @Test
+    fun migrationFromVersion2DeduplicatesMessageIdsAndKeepsNullIds() {
+        context.deleteDatabase(databaseName)
+        val databaseFile = context.getDatabasePath(databaseName)
+        databaseFile.parentFile?.mkdirs()
+        SQLiteDatabase.openDatabase(
+            databaseFile.path,
+            null,
+            SQLiteDatabase.CREATE_IF_NECESSARY
+        ).also { legacy ->
+            legacy.execSQL(
+                """CREATE TABLE IF NOT EXISTS sms_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    sender TEXT,
+                    text TEXT NOT NULL,
+                    otp TEXT,
+                    receivedAt INTEGER NOT NULL,
+                    messageId TEXT,
+                    isRead INTEGER NOT NULL DEFAULT 0,
+                    notificationId INTEGER
+                )""".trimIndent()
+            )
+            // 三条重复 messageId，保留 id 最大的那条
+            legacy.execSQL("INSERT INTO sms_messages(text, receivedAt, messageId) VALUES('重复一', 1, 'dup-1')")
+            legacy.execSQL("INSERT INTO sms_messages(text, receivedAt, messageId) VALUES('重复二', 2, 'dup-1')")
+            legacy.execSQL("INSERT INTO sms_messages(text, receivedAt, messageId) VALUES('重复三', 3, 'dup-1')")
+            legacy.execSQL("INSERT INTO sms_messages(text, receivedAt, messageId) VALUES('唯一', 4, 'unique-1')")
+            // 两条没有 messageId 的历史记录：SQLite 唯一索引允许多个 NULL，必须都保留
+            legacy.execSQL("INSERT INTO sms_messages(text, receivedAt, messageId) VALUES('无ID甲', 5, NULL)")
+            legacy.execSQL("INSERT INTO sms_messages(text, receivedAt, messageId) VALUES('无ID乙', 6, NULL)")
+            legacy.version = 2
+            legacy.close()
+        }
+
+        openDatabase().also { migrated ->
+            val dao = migrated.smsMessageDao()
+            val stored = dao.getAllNewestFirst()
+
+            // 6 条中 3 条重复合并为 1 条，共剩 4 条
+            assertEquals(4, stored.size)
+            assertEquals(1, stored.count { it.messageId == "dup-1" })
+            assertEquals("重复三", stored.first { it.messageId == "dup-1" }.text)
+            assertEquals(2, stored.count { it.messageId == null })
+
+            // 唯一索引由迁移创建，重复插入必须被忽略
+            val duplicate = entity(text = "再来一条重复", receivedAt = 7, messageId = "dup-1")
+            assertEquals(-1L, dao.insertIgnoringDuplicate(duplicate))
+            assertEquals(4, dao.getAllNewestFirst().size)
+
+            // 新 messageId 正常写入
+            val fresh = entity(text = "新的", receivedAt = 8, messageId = "fresh-1")
+            assertTrue(dao.insertIgnoringDuplicate(fresh) > 0L)
+            assertEquals(5, dao.getAllNewestFirst().size)
+
+            // 无 messageId 的记录不受唯一索引限制，可以继续累加
+            assertEquals(2, dao.insertIgnoringDuplicate(entity(text = "无ID丙", receivedAt = 9)))
+            migrated.close()
+        }
+    }
+
     private fun openDatabase(): SmsDatabase = Room.databaseBuilder(
         context,
         SmsDatabase::class.java,
         databaseName
-    ).addMigrations(SmsDatabase.MIGRATION_1_2)
+    ).addMigrations(SmsDatabase.MIGRATION_1_2, SmsDatabase.MIGRATION_2_3)
         .allowMainThreadQueries()
         .build()
 

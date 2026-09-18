@@ -2,6 +2,7 @@ package com.localsmsrelay.data;
 
 import androidx.room.Dao;
 import androidx.room.Insert;
+import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
 
 import java.util.List;
@@ -10,6 +11,13 @@ import java.util.List;
 public interface SmsMessageDao {
     @Insert
     long insert(SmsMessageEntity message);
+
+    /**
+     * 冲突（messageId 唯一索引命中）时返回 -1，调用方据此判定为重复投递。
+     * 用 INSERT OR IGNORE 而不是先查后插，避免并发下的竞态。
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    long insertIgnoringDuplicate(SmsMessageEntity message);
 
     @Query("SELECT * FROM sms_messages ORDER BY receivedAt DESC, id DESC")
     List<SmsMessageEntity> getAllNewestFirst();

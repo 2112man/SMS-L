@@ -21,8 +21,13 @@ class SmsHistoryRepository private constructor(context: Context) {
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** Called from NanoHTTPD's request thread and completes before notification delivery. */
-    fun saveIncoming(message: IncomingMessage, otp: String?, receivedAt: Long): SavedIncomingMessage {
+    /**
+     * 保存一条收到的短信，返回 null 表示该 messageId 已存在，属于重复投递。
+     *
+     * 调用方（局域网 HTTP 线程或云端 WebSocket 线程）在返回非 null 时才推送通知。
+     * 去重依靠 Room 的唯一索引落盘，因此进程重启、Cloudflare 断线重放都不会产生重复通知。
+     */
+    fun saveIncoming(message: IncomingMessage, otp: String?, receivedAt: Long): SavedIncomingMessage? {
         val entity = SmsMessageEntity().apply {
             sender = message.sender
             text = message.text
@@ -31,18 +36,23 @@ class SmsHistoryRepository private constructor(context: Context) {
             messageId = message.messageId
             isRead = false
         }
-        val saved = database.runInTransaction<SavedIncomingMessage> {
-            entity.id = dao.insert(entity)
-            val notificationId = NotificationIds.incomingSms(entity.id)
-            dao.attachNotificationId(entity.id, notificationId)
-            dao.trimToNewest(MAX_HISTORY)
-            SavedIncomingMessage(
-                databaseId = entity.id,
-                notificationId = notificationId,
-                unreadCount = dao.countUnread()
-            )
+        val saved = database.runInTransaction<SavedIncomingMessage?> {
+            val newId = dao.insertIgnoringDuplicate(entity)
+            if (newId <= 0L) {
+                null
+            } else {
+                entity.id = newId
+                val notificationId = NotificationIds.incomingSms(newId)
+                dao.attachNotificationId(newId, notificationId)
+                dao.trimToNewest(MAX_HISTORY)
+                SavedIncomingMessage(
+                    databaseId = newId,
+                    notificationId = notificationId,
+                    unreadCount = dao.countUnread()
+                )
+            }
         }
-        notifyHistoryChanged()
+        if (saved != null) notifyHistoryChanged()
         return saved
     }
 

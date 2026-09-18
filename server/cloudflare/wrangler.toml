@@ -1,0 +1,25 @@
+# SMS-L 云端中继 — Wrangler 配置
+#
+# 部署前请先执行（Token 不写进本文件，也不进仓库）：
+#   npx wrangler secret put IPHONE_TOKEN
+#   npx wrangler secret put ANDROID_TOKEN
+#
+# 注意 migrations 必须用 new_sqlite_classes：
+# Cloudflare 免费计划的 Durable Objects 仅支持 SQLite 存储后端，
+# 写成 new_classes（KV 后端）会在部署时直接失败。
+
+name = "sms-l-relay"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# 不启用 Workers 日志推送，避免任何意外把请求内容带到日志里。
+[observability]
+enabled = false
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "AndroidHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AndroidHub"]

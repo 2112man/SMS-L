@@ -9,13 +9,6 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 
-data class IncomingMessage(
-    val sender: String?,
-    val text: String,
-    val timestamp: String?,
-    val messageId: String?
-)
-
 class RelayHttpServer(
     host: String,
     port: Int,

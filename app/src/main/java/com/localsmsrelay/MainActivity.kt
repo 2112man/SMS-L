@@ -48,6 +48,12 @@ class MainActivity : Activity() {
     private lateinit var endpointView: TextView
     private lateinit var tokenInput: EditText
     private lateinit var portInput: EditText
+    private lateinit var connectionDetailView: TextView
+    private lateinit var serverUrlInput: EditText
+    private lateinit var androidTokenInput: EditText
+    private lateinit var cloudflareSwitch: Switch
+    private lateinit var cloudflareSection: View
+    private lateinit var lanSection: View
     private lateinit var messagesPage: View
     private lateinit var settingsPage: View
     private lateinit var messagesNavButton: Button
@@ -264,25 +270,86 @@ class MainActivity : Activity() {
         root.addView(text("设置", 28f, Typeface.BOLD).apply {
             setTextColor(Color.rgb(14, 77, 100))
         })
-        root.addView(text("SMS-L · iPhone 短信局域网通知中继", 14f).apply {
+        root.addView(text("SMS-L · iPhone 短信通知中继（Cloudflare 云端 / 局域网）", 14f).apply {
             setTextColor(Color.DKGRAY)
             setPadding(0, dp(4), 0, dp(20))
         })
 
         statusView = text("服务状态：已停止", 18f, Typeface.BOLD)
         root.addView(statusView)
+        connectionDetailView = text("", 13f).apply { setTextColor(Color.DKGRAY) }
+        root.addView(connectionDetailView, marginTop(4))
+
+        root.addView(sectionTitle("接收方式"))
+        cloudflareSwitch = switch("使用 Cloudflare 云端中继", AppPrefs.useCloudflareRelay(this)) {
+            AppPrefs.setUseCloudflareRelay(this, it)
+            refreshStatus()
+        }
+        root.addView(cloudflareSwitch)
+        root.addView(text(
+            "开启后 Android 主动连接 Cloudflare，iPhone 无需与手机处于同一 Wi-Fi。关闭后回落到局域网模式。",
+            13f
+        ).apply { setTextColor(Color.DKGRAY); setLineSpacing(0f, 1.2f) }, marginTop(4))
+
+        // ---- Cloudflare 模式配置 ----
+        cloudflareSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        cloudflareSection.addView(text("服务器地址", 14f, Typeface.BOLD), marginTop(14))
+        cloudflareSection.addView(text(
+            "填 Cloudflare Worker 地址即可，协议和路径会自动补全为 wss://<主机>/ws。",
+            12f
+        ).apply { setTextColor(Color.GRAY) })
+        serverUrlInput = EditText(this).apply {
+            setText(AppPrefs.serverUrl(this@MainActivity))
+            hint = "sms-l-relay.xxx.workers.dev"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setTextSize(14f)
+            setSelectAllOnFocus(true)
+        }
+        cloudflareSection.addView(serverUrlInput, fullWidth())
+
+        cloudflareSection.addView(text("Android Token（至少 ${AppPrefs.MIN_TOKEN_LENGTH} 个字符）", 14f, Typeface.BOLD), marginTop(14))
+        cloudflareSection.addView(text(
+            "必须与 Cloudflare Worker 的 ANDROID_TOKEN secret 完全一致，且不能与 IPHONE_TOKEN 相同。",
+            12f
+        ).apply { setTextColor(Color.GRAY) })
+        androidTokenInput = EditText(this).apply {
+            setText(AppPrefs.androidToken(this@MainActivity))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            typeface = Typeface.MONOSPACE
+            setTextSize(14f)
+            setSelectAllOnFocus(true)
+        }
+        cloudflareSection.addView(androidTokenInput, fullWidth())
+
+        val androidTokenButtons = horizontalRow()
+        androidTokenButtons.addView(button("复制 Token") {
+            val clipboard = getSystemService(ClipboardManager::class.java)
+            clipboard.setPrimaryClip(ClipData.newPlainText("SMS-L Android Token", androidTokenInput.text))
+            toast("Android Token 已复制")
+        }, weighted())
+        androidTokenButtons.addView(button("重新生成") {
+            val token = AppPrefs.generateToken()
+            AppPrefs.setAndroidToken(this, token)
+            androidTokenInput.setText(token)
+            toast("已生成新 Token，请同步更新 Cloudflare secret")
+        }, weighted(marginStart = 8))
+        cloudflareSection.addView(androidTokenButtons, marginTop(6))
+        root.addView(cloudflareSection)
+
+        // ---- 局域网模式配置（兼容保留）----
+        lanSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         addressView = text("局域网 IP：检测中", 16f)
-        root.addView(addressView, marginTop(12))
+        lanSection.addView(addressView, marginTop(12))
         portSummaryView = text("端口：${AppPrefs.port(this)}", 16f)
-        root.addView(portSummaryView, marginTop(4))
+        lanSection.addView(portSummaryView, marginTop(4))
         endpointView = text("iPhone 请求地址：不可用", 14f).apply {
             setTextColor(Color.DKGRAY)
             setTextIsSelectable(true)
         }
-        root.addView(endpointView, marginTop(4))
+        lanSection.addView(endpointView, marginTop(4))
 
-        root.addView(sectionTitle("配置"))
-        root.addView(text("Token（至少 24 个字符）", 14f, Typeface.BOLD))
+        lanSection.addView(sectionTitle("局域网配置"))
+        lanSection.addView(text("Token（至少 ${AppPrefs.MIN_TOKEN_LENGTH} 个字符）", 14f, Typeface.BOLD))
         tokenInput = EditText(this).apply {
             setText(AppPrefs.token(this@MainActivity))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
@@ -290,7 +357,7 @@ class MainActivity : Activity() {
             setTextSize(14f)
             setSelectAllOnFocus(true)
         }
-        root.addView(tokenInput, fullWidth())
+        lanSection.addView(tokenInput, fullWidth())
 
         val tokenButtons = horizontalRow()
         tokenButtons.addView(button("复制 Token") {
@@ -304,15 +371,16 @@ class MainActivity : Activity() {
             tokenInput.setText(token)
             toast("已生成新 Token")
         }, weighted(marginStart = 8))
-        root.addView(tokenButtons, marginTop(6))
+        lanSection.addView(tokenButtons, marginTop(6))
 
-        root.addView(text("端口", 14f, Typeface.BOLD), marginTop(14))
+        lanSection.addView(text("端口", 14f, Typeface.BOLD), marginTop(14))
         portInput = EditText(this).apply {
             setText(String.format(Locale.ROOT, "%d", AppPrefs.port(this@MainActivity)))
             inputType = InputType.TYPE_CLASS_NUMBER
             setTextSize(16f)
         }
-        root.addView(portInput, fullWidth())
+        lanSection.addView(portInput, fullWidth())
+        root.addView(lanSection)
 
         root.addView(button("保存配置") {
             if (saveConfiguration()) {
@@ -465,6 +533,18 @@ class MainActivity : Activity() {
 
     private fun refreshStatus() {
         if (!::portInput.isInitialized) return
+
+        val useCloudflare = AppPrefs.useCloudflareRelay(this)
+        cloudflareSwitch.isChecked = useCloudflare
+        cloudflareSection.visibility = if (useCloudflare) View.VISIBLE else View.GONE
+        lanSection.visibility = if (useCloudflare) View.GONE else View.VISIBLE
+
+        if (useCloudflare) {
+            refreshCloudflareStatus()
+            return
+        }
+
+        connectionDetailView.text = ""
         val ip = WifiIpResolver.currentWifiIpv4(this)
         val port = portInput.text.toString().toIntOrNull() ?: AppPrefs.port(this)
         portSummaryView.text = "端口：$port"
@@ -487,6 +567,36 @@ class MainActivity : Activity() {
             statusView.setTextColor(Color.rgb(180, 55, 55))
             messageServiceStatus.visibility = View.VISIBLE
         }
+    }
+
+    /** 云端模式下，状态直接反映 WebSocket 的连接结果与失败原因。 */
+    private fun refreshCloudflareStatus() {
+        if (!RelayService.isRunning) {
+            statusView.text = "服务状态：已停止"
+            statusView.setTextColor(Color.rgb(180, 55, 55))
+            connectionDetailView.text = "点击下方“启动服务”开始连接云端中继"
+            messageServiceStatus.visibility = View.VISIBLE
+            return
+        }
+
+        val state = RelayService.connectionState
+        val detail = RelayService.connectionDetail
+        val (label, color) = when (state) {
+            RelayConnectionState.CONNECTED -> "服务状态：已连接云端" to Color.rgb(19, 120, 80)
+            RelayConnectionState.CONNECTING -> "服务状态：正在连接…" to Color.rgb(150, 76, 0)
+            RelayConnectionState.RECONNECTING -> "服务状态：重连中…" to Color.rgb(150, 76, 0)
+            RelayConnectionState.UNAUTHORIZED -> "服务状态：认证失败" to Color.rgb(180, 55, 55)
+            RelayConnectionState.LAN_LISTENING -> "服务状态：运行中（局域网模式）" to Color.rgb(19, 120, 80)
+            RelayConnectionState.STOPPED -> "服务状态：已停止" to Color.rgb(180, 55, 55)
+        }
+        statusView.text = label
+        statusView.setTextColor(color)
+        connectionDetailView.text = when {
+            detail.isNotEmpty() -> detail
+            state == RelayConnectionState.CONNECTED -> "短信将通过 WebSocket 实时推送"
+            else -> ""
+        }
+        messageServiceStatus.visibility = if (state == RelayConnectionState.STOPPED) View.VISIBLE else View.GONE
     }
 
     private fun registerWifiNetworkCallback() {
@@ -525,10 +635,30 @@ class MainActivity : Activity() {
         runOnUiThread { refreshStatus() }
     }
 
-    private fun saveConfiguration(): Boolean {
+    private fun saveConfiguration(): Boolean =
+        if (AppPrefs.useCloudflareRelay(this)) saveCloudflareConfiguration() else saveLanConfiguration()
+
+    /** 云端模式只需要服务器地址与 Android Token，不再依赖 Wi-Fi 与端口。 */
+    private fun saveCloudflareConfiguration(): Boolean {
+        val serverUrl = serverUrlInput.text.toString().trim()
+        if (RelayEndpoint.normalize(serverUrl) == null) {
+            serverUrlInput.error = "请填写有效地址，例如 sms-l-relay.xxx.workers.dev"
+            return false
+        }
+        val androidToken = androidTokenInput.text.toString().trim()
+        if (androidToken.length < AppPrefs.MIN_TOKEN_LENGTH) {
+            androidTokenInput.error = "Android Token 至少需要 ${AppPrefs.MIN_TOKEN_LENGTH} 个字符"
+            return false
+        }
+        AppPrefs.setServerUrl(this, serverUrl)
+        AppPrefs.setAndroidToken(this, androidToken)
+        return true
+    }
+
+    private fun saveLanConfiguration(): Boolean {
         val token = tokenInput.text.toString().trim()
-        if (token.length < 24) {
-            tokenInput.error = "Token 至少需要 24 个字符"
+        if (token.length < AppPrefs.MIN_TOKEN_LENGTH) {
+            tokenInput.error = "Token 至少需要 ${AppPrefs.MIN_TOKEN_LENGTH} 个字符"
             return false
         }
         val port = portInput.text.toString().toIntOrNull()
