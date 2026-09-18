@@ -8,7 +8,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail --format pretty",
-    "check": "node --check src/index.js && node --check src/hub.js"
+    "check": "node --check src/index.js && node --check src/hub.js",
+    "test": "node test/worker.test.mjs && node test/hub.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

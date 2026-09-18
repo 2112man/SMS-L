@@ -20,8 +20,11 @@ server/cloudflare/
 ├── src/
 │   ├── index.js      Worker 入口：路由、Token 校验、内容哈希兜底
 │   └── hub.js        Durable Object：WebSocket 管理、待确认队列、重放与 ack
+├── test/
+│   ├── worker.test.mjs  Worker 逻辑测试（36 项）
+│   └── hub.test.mjs     Durable Object 逻辑测试（31 项）
 ├── wrangler.toml     Durable Object 绑定与迁移声明
-├── package.json      部署依赖
+├── package.json      部署依赖与脚本
 └── README.md         本文件
 ```
 
@@ -170,6 +173,28 @@ npx wrangler dev
 `wrangler dev` 默认使用本地模拟的 Durable Object，不会影响线上数据。
 
 > 生产环境必须使用 `wss://`。`ws://` 明文只建议在本机调试时使用。
+
+## 测试
+
+不需要安装任何依赖（只用 Node 内置能力），直接运行：
+
+```bash
+npm test
+```
+
+会依次跑 Worker 与 Durable Object 两组逻辑测试，覆盖：
+
+- 双 Token 鉴权、Token 不可互换、缺失 Bearer 的处理
+- Content-Type / 超长正文 / 非法 UTF-8 / 非法 JSON 的拒绝
+- 内容哈希兜底的确定性与字段敏感性、NUL 分隔符防碰撞
+- 队列重放、ack 出队、重复 messageId 只入队一次
+- 队列上限 50 条、24 小时过期清理
+- 多连接广播与 WebSocket 关闭码映射
+
+改动 `src/` 后请先跑通这些测试再部署。
+
+> 说明：测试用轻量替身模拟 Cloudflare 特有的 `WebSocketPair` 与 101 响应，
+> 因此验证的是业务逻辑本身，不能替代在真实 Cloudflare 环境下的联调。
 
 ## 日志与隐私
 

@@ -298,7 +298,7 @@ npx wrangler dev # 本地开发
 - 物理 Wi-Fi / VPN 排除测试
 - 消息时间格式与 `messageId` 去重测试
 - Room 数据库持久化、500 条上限、v1 → v2 → v3 迁移、唯一索引去重
-- Cloudflare Worker 与 Durable Object 逻辑测试（68 项）
+- Cloudflare Worker 与 Durable Object 逻辑测试（67 项，`cd server/cloudflare && npm test`）
 - 跨语言内容哈希一致性测试（Node 与 Kotlin 两端对照）
 - `lintDebug` 与 `assembleDebug` 构建检查
 
