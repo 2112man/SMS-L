@@ -52,8 +52,8 @@ class MainActivity : Activity() {
     private lateinit var serverUrlInput: EditText
     private lateinit var androidTokenInput: EditText
     private lateinit var cloudflareSwitch: Switch
-    private lateinit var cloudflareSection: View
-    private lateinit var lanSection: View
+    private lateinit var cloudflareSection: LinearLayout
+    private lateinit var lanSection: LinearLayout
     private lateinit var messagesPage: View
     private lateinit var settingsPage: View
     private lateinit var messagesNavButton: Button
