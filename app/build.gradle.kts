@@ -25,7 +25,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 开启 R8 代码压缩与资源压缩。
+            // Compose 类数量是 View 版的十几倍，不压缩时 dex 很大，
+            // 系统安装时生成的 vdex/odex 会跟着膨胀到 36 MB 左右。
+            isMinifyEnabled = true
+            isShrinkResources = true
             // 没有配置正式签名；用调试密钥签名，否则 assembleRelease 产出的是
             // 未签名 APK，根本装不上。这与上游发 Debug APK 的取舍一致，
             // 只是这里换来了正确的 release 包名与版本号。
@@ -40,6 +44,18 @@ android {
             // 两者的 Room 数据库、通知、SharedPreferences 各自隔离，互不影响。
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-test"
+        }
+    }
+
+    packaging {
+        resources {
+            // 这两份是构建期产物，运行时用不到。
+            // 各依赖的 LICENSE 文件刻意保留 —— 那是 Apache-2.0 的署名要求，
+            // 为省几十 KB 去掉不合适。
+            excludes += setOf(
+                "DebugProbesKt.bin",
+                "kotlin-tooling-metadata.json",
+            )
         }
     }
 
