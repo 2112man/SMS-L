@@ -90,6 +90,13 @@ class MainActivity : Activity() {
         if (intent.getBooleanExtra(EXTRA_RESTORE_SERVICE, false) && !RelayService.isRunning) {
             ensureNotificationPermission { startRelayService() }
         }
+
+        // 用户此前启用过服务（serviceEnabled 为 true），但进程被系统回收或被「强行停止」
+        // 导致服务没在跑时，打开 App 直接恢复连接，不必再手动点一次「启动服务」。
+        // 用户主动点过「停止服务」时 serviceEnabled 已置 false，这里不会误启动。
+        if (AppPrefs.serviceEnabled(this) && !RelayService.isRunning) {
+            ensureNotificationPermission { startRelayService() }
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
