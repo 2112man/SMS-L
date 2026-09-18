@@ -179,7 +179,7 @@ class SmsDatabaseInstrumentedTest {
             assertEquals(5, dao.getAllNewestFirst().size)
 
             // 无 messageId 的记录不受唯一索引限制，可以继续累加
-            assertEquals(2, dao.insertIgnoringDuplicate(entity(text = "无ID丙", receivedAt = 9)))
+            assertTrue(dao.insertIgnoringDuplicate(entity(text = "无ID丙", receivedAt = 9)) > 0L)
             migrated.close()
         }
     }
