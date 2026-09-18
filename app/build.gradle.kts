@@ -12,17 +12,24 @@ android {
     compileSdkMinor = 0
 
     defaultConfig {
-        applicationId = "com.localsmsrelay"
+        // 换 Compose 界面后改了包名，与 v1.3.0 的 com.localsmsrelay 完全独立，
+        // 两者可并存、数据互不影响。
+        // namespace 保持 com.localsmsrelay 不变，因此代码一行未动。
+        applicationId = "com.localsmsrelay.compose"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.4.0"
+        versionCode = 11
+        versionName = "1.4.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 没有配置正式签名；用调试密钥签名，否则 assembleRelease 产出的是
+            // 未签名 APK，根本装不上。这与上游发 Debug APK 的取舍一致，
+            // 只是这里换来了正确的 release 包名与版本号。
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

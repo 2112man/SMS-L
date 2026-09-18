@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  单色层，供 Android 13+ 的「主题图标」使用：系统会用壁纸取色重新着色。
+  用 evenOdd 让转发箭头成为气泡上的镂空，从而在单色下依然可辨。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M42,32 Q34,32 34,40 L34,56 Q34,64 42,64 L48,64 L40,74 L54,64 L66,64 Q74,64 74,56 L74,40 Q74,32 66,32 Z M46,46.2 L57,46.2 L57,42 L65,48 L57,54 L57,49.8 L46,49.8 Z"
+        android:fillColor="#FF000000" />
+</vector>
