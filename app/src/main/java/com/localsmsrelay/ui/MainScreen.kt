@@ -7,8 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,7 +85,7 @@ fun MainScreen(state: RelayUiState) {
                 actions = {
                     if (page == PAGE_MESSAGES && state.messages.isNotEmpty()) {
                         IconButton(onClick = { showClearDialog = true }) {
-                            Icon(Icons.Filled.DeleteSweep, contentDescription = "清空全部记录")
+                            Icon(Icons.Filled.Delete, contentDescription = "清空全部记录")
                         }
                     }
                 }
@@ -99,7 +99,7 @@ fun MainScreen(state: RelayUiState) {
                         page = PAGE_MESSAGES
                         state.markAllRead()
                     },
-                    icon = { Icon(Icons.Filled.Forum, contentDescription = null) },
+                    icon = { Icon(Icons.Filled.Email, contentDescription = null) },
                     label = { Text("消息") }
                 )
                 NavigationBarItem(

@@ -69,7 +69,11 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    // 新版 material3 不再传递依赖图标库，需要显式引入。
+    // 这里只引 material-icons-core（精选小集合），刻意不引 material-icons-extended：
+    // extended 会把上万个图标编进 dex，实测让主 dex 涨到 44 MB、APK 涨到 27.6 MB。
+    // 核心集里没有的图标在 ui/SmsIcons.kt 里按需自定义。
+    implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
 

@@ -14,8 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -124,7 +123,7 @@ private fun ServiceBanner(state: RelayUiState, onStartService: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Filled.NotificationsActive,
+                imageVector = Icons.Filled.Notifications,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -239,7 +238,7 @@ private fun MessageCard(
                     )
                     TextButton(onClick = { onCopyOtp(otp) }) {
                         Icon(
-                            imageVector = Icons.Filled.ContentCopy,
+                            imageVector = SmsIcons.ContentCopy,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
