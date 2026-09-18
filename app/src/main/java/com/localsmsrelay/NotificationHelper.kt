@@ -40,7 +40,7 @@ object NotificationHelper {
                 "后台监听",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "SMS-L 局域网接收服务的低打扰常驻通知"
+                description = "SMS-L 中继服务的低打扰常驻通知"
                 setSound(null, null)
                 enableVibration(false)
                 vibrationPattern = null
@@ -102,7 +102,7 @@ object NotificationHelper {
         return Notification.Builder(context, CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Local SMS Relay 正在运行")
-            .setContentText("局域网短信接收服务已启动")
+            .setContentText("短信接收服务已启动")
             .setContentIntent(openApp)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -254,7 +254,7 @@ object NotificationHelper {
         val notification = Notification.Builder(context, CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("恢复 SMS-L")
-            .setContentText("系统未允许自动恢复，点击重新启动局域网接收服务。")
+            .setContentText("系统未允许自动恢复，点击重新启动短信接收服务。")
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)

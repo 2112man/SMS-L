@@ -6,3 +6,8 @@
 /.kotlin/
 /dist/
 *.apk
+
+# Cloudflare Worker 依赖目录（package-lock.json 需要提交）
+node_modules/
+.wrangler/
+.dev.vars

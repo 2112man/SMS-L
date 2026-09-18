@@ -49,6 +49,16 @@ class CloudflareClient(
     @Volatile
     private var stopped = false
 
+    /**
+     * 是否有一次连接尝试尚未落定（onOpen / onFailure / onClosed 三者之一）。
+     *
+     * 服务刚启动时 ConnectivityManager 会连续回调多次，而握手完成前
+     * isConnected 必然为 false，若不拦一手，每次回调都会再开一个 WebSocket，
+     * 服务端就会留下多个孤儿连接（实测一次启动产生 3 个）。
+     */
+    @Volatile
+    private var attemptInFlight = false
+
     @Volatile
     var isConnected: Boolean = false
         private set
@@ -68,6 +78,7 @@ class CloudflareClient(
         stopped = true
         scheduler.removeCallbacks(reconnectTask)
         isConnected = false
+        attemptInFlight = false
         socket?.close(NORMAL_CLOSURE, null)
         socket = null
         httpClient.dispatcher.executorService.shutdown()
@@ -77,10 +88,15 @@ class CloudflareClient(
     /** 网络切换后立即重试，跳过退避等待。 */
     fun retryNow() {
         if (stopped) return
+        // 已有连接尝试在飞行中就什么都不做：否则启动阶段的连续网络回调
+        // 会并发开出多个 WebSocket，服务端只认得到孤儿连接。
+        if (attemptInFlight) return
         scheduler.removeCallbacks(reconnectTask)
         attempt = 0
         socket?.cancel()
         socket = null
+        // 必须显式清掉，否则 openSocket() 的「已连接」守卫会挡住这次重连。
+        isConnected = false
         openSocket()
     }
 
@@ -93,8 +109,18 @@ class CloudflareClient(
         socket?.send(frame)
     }
 
+    /**
+     * 打开一条新连接。
+     *
+     * 用 @Synchronized 把「判断 + 建连」做成原子操作。RelayService 是先赋值 client
+     * 再调用 start()，两步之间网络回调线程可能抢先调 retryNow()；不加锁时会同时
+     * 开出两条 WebSocket，服务端就会看到 2 个连接（实测到 delivered=2）。
+     */
+    @Synchronized
     private fun openSocket() {
         if (stopped) return
+        // 已经有尝试在飞、或已经连上了，都不该再开第二条。
+        if (attemptInFlight || isConnected) return
 
         val request = Request.Builder()
             .url(endpoint)
@@ -105,6 +131,7 @@ class CloudflareClient(
             if (attempt == 0) RelayConnectionState.CONNECTING else RelayConnectionState.RECONNECTING,
             ""
         )
+        attemptInFlight = true
         socket = httpClient.newWebSocket(request, SocketListener())
     }
 
@@ -112,6 +139,7 @@ class CloudflareClient(
         if (stopped) return
         socket = null
         isConnected = false
+        attemptInFlight = false
 
         val delay = if (unauthorized) UNAUTHORIZED_RETRY_MILLIS else nextBackoffMillis()
         listener.onStateChanged(
@@ -135,6 +163,7 @@ class CloudflareClient(
     private inner class SocketListener : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             attempt = 0
+            attemptInFlight = false
             isConnected = true
             listener.onStateChanged(RelayConnectionState.CONNECTED, "")
         }

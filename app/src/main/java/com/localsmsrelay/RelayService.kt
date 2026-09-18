@@ -119,7 +119,8 @@ class RelayService : Service() {
     /** 网络切换时立即重试，不必等退避计时到点。 */
     private fun onConnectivityChanged() {
         if (!AppPrefs.useCloudflareRelay(this)) {
-            ensureLanServer()
+            // 统一走 ensureConnection()，避免绕过它的锁。
+            ensureConnection()
             return
         }
         val current = client
@@ -136,6 +137,14 @@ class RelayService : Service() {
 
     private val ensureConnectionRunnable = Runnable { ensureConnection() }
 
+    /**
+     * 建立（或维持）当前模式需要的接收链路。
+     *
+     * 必须 @Synchronized：ConnectivityManager 的回调线程与主线程会并发进入，
+     * 若不加锁，「读 client == null」与「赋值 client」之间存在窗口，两个线程会
+     * 各自创建一个 CloudflareClient，于是服务端看到 2 条 WebSocket（已实测复现）。
+     */
+    @Synchronized
     private fun ensureConnection() {
         if (AppPrefs.useCloudflareRelay(this)) {
             ensureCloudflareClient()
