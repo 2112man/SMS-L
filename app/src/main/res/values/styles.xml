@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      Compose 负责全部绘制，这里只需保证窗口背景与 Compose 的配色一致，
+      避免启动瞬间闪出另一种底色。
+      状态栏/导航栏颜色交给 enableEdgeToEdge()，不再硬编码。
+    -->
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">@color/accent</item>
-        <item name="android:navigationBarColor">#F5F7F8</item>
-        <item name="android:statusBarColor">@color/primary_dark</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>
-

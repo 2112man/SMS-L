@@ -2,4 +2,7 @@
 <resources>
     <color name="primary_dark">#0E4D64</color>
     <color name="accent">#DAA520</color>
+
+    <!-- 与 SmsTheme 的 FallbackLight.background 保持一致，避免启动闪白/闪黑 -->
+    <color name="window_background">#F5F7F8</color>
 </resources>

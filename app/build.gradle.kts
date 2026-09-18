@@ -1,10 +1,15 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.localsmsrelay"
-    compileSdk = 36
+    // Compose 1.12+/material3 1.5.0-alpha/Miuix 0.9.4 都要求编译到 API 37。
+    // targetSdk 维持 36 不变，只提升编译用的 SDK。
+    compileSdk = 37
+    compileSdkMinor = 0
 
     defaultConfig {
         applicationId = "com.localsmsrelay"
@@ -35,6 +40,19 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    buildFeatures {
+        // Compose 编译器由 org.jetbrains.kotlin.plugin.compose 提供
+        compose = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        // 必须与上面 compileOptions 的 Java 17 对齐，
+        // 否则 Kotlin 会跟随 JDK 用 21，报 JVM target 不一致。
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
 }
 
 dependencies {
@@ -43,7 +61,18 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.room:room-runtime:2.8.4")
     annotationProcessor("androidx.room:room-compiler:2.8.4")
-    implementation("androidx.recyclerview:recyclerview:1.4.0")
+
+    // ---- Compose ----
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260814")
     androidTestImplementation("androidx.test:runner:1.7.0")
