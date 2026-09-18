@@ -23,6 +23,12 @@ android {
                 "proguard-rules.pro"
             )
         }
+        debug {
+            // 测试版用独立包名，可与已安装的正式版并存。
+            // 两者的 Room 数据库、通知、SharedPreferences 各自隔离，互不影响。
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-test"
+        }
     }
 
     compileOptions {

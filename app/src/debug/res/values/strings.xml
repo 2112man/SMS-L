@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 仅覆盖 debug 构建，正式版仍显示 SMS-L。 -->
+    <string name="app_name">SMS-L 测试</string>
+</resources>
